@@ -1,4 +1,4 @@
-module db-console
+module otto
 
 go 1.25.5
 

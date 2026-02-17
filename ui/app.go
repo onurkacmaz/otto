@@ -3,7 +3,7 @@ package ui
 import (
 	tea "github.com/charmbracelet/bubbletea"
 
-	"db-console/db"
+	"otto/db"
 )
 
 type appState int

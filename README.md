@@ -35,7 +35,7 @@ export PATH="$HOME/.local/bin:$PATH"
 Run the application:
 
 ```bash
-./db-console
+./otto
 ```
 
 ### Connecting to a Database

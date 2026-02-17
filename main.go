@@ -5,7 +5,7 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"db-console/ui"
+	"otto/ui"
 )
 
 func main() {

@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 )
 
-const historyDir = ".db-console"
+const historyDir = ".otto"
 const historyFile = "history.json"
 
 func historyPath() string {

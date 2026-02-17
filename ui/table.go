@@ -8,7 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"db-console/db"
+	"otto/db"
 )
 
 const pageSize = 50

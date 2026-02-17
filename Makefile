@@ -1,4 +1,4 @@
-BINARY_NAME=db-console
+BINARY_NAME=otto
 INSTALL_DIR=$(HOME)/.local/bin
 
 .PHONY: build install uninstall
