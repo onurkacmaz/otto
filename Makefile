@@ -9,9 +9,9 @@ build:
 install: build
 	mkdir -p $(INSTALL_DIR)
 	mv $(BINARY_NAME) $(INSTALL_DIR)/$(BINARY_NAME)
-	@echo "✓ $(BINARY_NAME) kuruldu: $(INSTALL_DIR)/$(BINARY_NAME)"
-	@echo "  PATH'te yoksa şunu ekle: export PATH=\"$$HOME/.local/bin:$$PATH\""
+	@echo "✓ $(BINARY_NAME) installed: $(INSTALL_DIR)/$(BINARY_NAME)"
+	@echo "  If not in PATH, add: export PATH=\"$$HOME/.local/bin:$$PATH\""
 
 uninstall:
 	rm -f $(INSTALL_DIR)/$(BINARY_NAME)
-	@echo "✓ $(BINARY_NAME) kaldırıldı"
+	@echo "✓ $(BINARY_NAME) removed"
