@@ -48,7 +48,7 @@ type BrowseModel struct {
 	height int
 }
 
-func NewBrowseModel(d db.DB, width, height int) BrowseModel {
+func NewBrowseModel(d db.DB, cfg db.Config, width, height int) BrowseModel {
 	if width == 0 {
 		width = 80
 	}
@@ -60,8 +60,14 @@ func NewBrowseModel(d db.DB, width, height int) BrowseModel {
 	delegate.ShowDescription = false
 	delegate.SetHeight(1)
 
+	dbName := cfg.DBName
+	if dbName == "" {
+		dbName = "postgres"
+	}
+	title := fmt.Sprintf("Tables — %s @ %s", dbName, cfg.Host)
+
 	l := list.New([]list.Item{}, delegate, width, height-4)
-	l.Title = "Tables"
+	l.Title = title
 	l.SetShowHelp(true)
 	l.DisableQuitKeybindings()
 

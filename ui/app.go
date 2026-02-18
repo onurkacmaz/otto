@@ -47,7 +47,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case ConnectedMsg:
 		db.SaveConnection(msg.Cfg)
-		a.browse = NewBrowseModel(msg.DB, a.width, a.height)
+		a.browse = NewBrowseModel(msg.DB, msg.Cfg, a.width, a.height)
 		a.state = stateBrowse
 		return a, a.browse.Init()
 	case TableSelectedMsg:

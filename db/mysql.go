@@ -25,7 +25,7 @@ func newMysqlDB(dsn string) (*mysqlDB, error) {
 }
 
 func (d *mysqlDB) ListTables(ctx context.Context) ([]Table, error) {
-	query := `SELECT table_schema, table_name FROM information_schema.tables WHERE table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys') ORDER BY table_schema, table_name`
+	query := `SELECT table_schema, table_name FROM information_schema.tables WHERE (DATABASE() IS NOT NULL AND table_schema = DATABASE()) OR (DATABASE() IS NULL AND table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')) ORDER BY table_schema, table_name`
 	rows, err := d.conn.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
