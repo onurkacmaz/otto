@@ -1,0 +1,43 @@
+version: 2
+
+project_name: otto
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - main: .
+    binary: otto
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+
+archives:
+  - formats:
+      - tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+
+checksum:
+  name_template: "checksums.txt"
+
+release:
+  github:
+    owner: onurkacmaz
+    name: otto
+  name_template: "v{{ .Version }}"

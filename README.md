@@ -12,6 +12,18 @@ A terminal-based database client written in Go using the Charm BubbleTea framewo
 
 ## Installation
 
+### Install script (macOS & Linux)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/onurkacmaz/otto/main/install.sh | sh
+```
+
+To install a specific version:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/onurkacmaz/otto/main/install.sh | sh -s v1.2.0
+```
+
 ### From source
 
 ```bash
