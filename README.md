@@ -12,6 +12,12 @@ A terminal-based database client written in Go using the Charm BubbleTea framewo
 
 ## Installation
 
+### Homebrew (macOS & Linux)
+
+```bash
+brew install onurkacmaz/otto/otto
+```
+
 ### Install script (macOS & Linux)
 
 ```bash

@@ -36,6 +36,20 @@ archives:
 checksum:
   name_template: "checksums.txt"
 
+brews:
+  - name: otto
+    repository:
+      owner: onurkacmaz
+      name: homebrew-otto
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    homepage: "https://github.com/onurkacmaz/otto"
+    description: "Terminal-based MySQL and PostgreSQL client"
+    license: "MIT"
+    install: |
+      bin.install "otto"
+    test: |
+      system "#{bin}/otto", "--help"
+
 release:
   github:
     owner: onurkacmaz
