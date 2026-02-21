@@ -7,7 +7,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-
 	"otto/db"
 )
 
@@ -20,6 +19,8 @@ type dataLoadedMsg struct {
 type dataErrMsg struct {
 	err error
 }
+
+type GoBackMsg struct{}
 
 type TableModel struct {
 	db        db.DB
@@ -67,8 +68,11 @@ func (m *TableModel) calcColWidths() {
 	}
 	for _, row := range m.result.Rows {
 		for i, val := range row {
-			if len(val) > m.colWidths[i] {
-				m.colWidths[i] = len(val)
+			if idx := strings.IndexAny(val, "\n\r"); idx >= 0 {
+				val = val[:idx]
+			}
+			if len([]rune(val)) > m.colWidths[i] {
+				m.colWidths[i] = len([]rune(val))
 			}
 			if m.colWidths[i] > 30 {
 				m.colWidths[i] = 30
@@ -77,9 +81,7 @@ func (m *TableModel) calcColWidths() {
 	}
 }
 
-type GoBackMsg struct{}
-
-func (m TableModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m TableModel) Update(msg tea.Msg) (TableModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -96,7 +98,7 @@ func (m TableModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = msg.err
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "q", "esc":
+		case "esc", "q":
 			return m, func() tea.Msg { return GoBackMsg{} }
 		case "j", "down":
 			if m.result != nil && m.cursor < len(m.result.Rows)-1 {
@@ -132,19 +134,30 @@ func (m TableModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func padRight(s string, w int) string {
-	if len(s) > w {
-		return s[:w]
+	var buf strings.Builder
+	buf.Grow(len(s))
+	for _, r := range s {
+		if r < 0x20 || r == 0x7F {
+			buf.WriteByte(' ')
+		} else {
+			buf.WriteRune(r)
+		}
 	}
-	return s + strings.Repeat(" ", w-len(s))
+	s = buf.String()
+	runes := []rune(s)
+	if len(runes) > w {
+		return string(runes[:w])
+	}
+	return s + strings.Repeat(" ", w-len(runes))
 }
 
-var (
-	headerStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FF6F61"))
-	rowStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("#FAFAFA"))
-	selectedStyle  = lipgloss.NewStyle().Background(lipgloss.Color("#FF6F61")).Foreground(lipgloss.Color("#000"))
-	borderStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#555555"))
-	tableHelpStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).MarginTop(1)
-)
+func clipLine(s string, maxW int) string {
+	runes := []rune(s)
+	if len(runes) > maxW {
+		return string(runes[:maxW])
+	}
+	return s
+}
 
 func truncateLine(s string, scrollX, maxWidth int) string {
 	runes := []rune(s)
@@ -158,23 +171,25 @@ func truncateLine(s string, scrollX, maxWidth int) string {
 	return string(runes)
 }
 
-func (m TableModel) View() string {
+var (
+	tblHeaderStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FF6F61"))
+	tblRowStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#E6EDF3"))
+	tblSelStyle    = lipgloss.NewStyle().Background(lipgloss.Color("#FF6F61")).Foreground(lipgloss.Color("#000000"))
+	tblBorderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#30363D"))
+)
+
+func (m TableModel) ViewPanel(w, h int) string {
 	if m.err != nil {
-		errStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000"))
-		return errStyle.Render(fmt.Sprintf("Error: %v", m.err))
+		errSty := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000"))
+		return errSty.Render(fmt.Sprintf(" Error: %v", m.err))
 	}
-
 	if m.result == nil {
-		return "Loading..."
+		return " Loading..."
 	}
 
-	w := m.width
-	if w == 0 {
-		w = 80
-	}
-	visibleRows := m.height - 6
+	visibleRows := h - 4
 	if visibleRows < 1 {
-		visibleRows = 10
+		visibleRows = 1
 	}
 
 	var b strings.Builder
@@ -184,11 +199,10 @@ func (m TableModel) View() string {
 	if rowCount == 0 {
 		startRow = 0
 	}
-	title := fmt.Sprintf(" %s.%s (%d-%d)", m.schema, m.tableName, startRow, m.offset+rowCount)
-	b.WriteString(headerStyle.Render(title) + "\n\n")
+	title := fmt.Sprintf(" %s.%s  (%d – %d)", m.schema, m.tableName, startRow, m.offset+rowCount)
+	b.WriteString(tblHeaderStyle.Render(title) + "\n\n")
 
-	var headerCells []string
-	var separators []string
+	var headerCells, separators []string
 	for i, col := range m.result.Columns {
 		cw := m.colWidths[i]
 		headerCells = append(headerCells, padRight(col, cw))
@@ -198,8 +212,8 @@ func (m TableModel) View() string {
 	headerLine := " │ " + strings.Join(headerCells, " │ ") + " │"
 	sepLine := " ├─" + strings.Join(separators, "─┼─") + "─┤"
 
-	b.WriteString(headerStyle.Render(truncateLine(headerLine, m.scrollX, w)) + "\n")
-	b.WriteString(borderStyle.Render(truncateLine(sepLine, m.scrollX, w)) + "\n")
+	b.WriteString(tblHeaderStyle.Render(clipLine(truncateLine(headerLine, m.scrollX, w), w)) + "\n")
+	b.WriteString(tblBorderStyle.Render(clipLine(truncateLine(sepLine, m.scrollX, w), w)) + "\n")
 
 	viewStart := 0
 	if m.cursor >= visibleRows {
@@ -217,19 +231,17 @@ func (m TableModel) View() string {
 			cells = append(cells, padRight(val, m.colWidths[j]))
 		}
 		line := " │ " + strings.Join(cells, " │ ") + " │"
-		line = truncateLine(line, m.scrollX, w)
+		line = clipLine(truncateLine(line, m.scrollX, w), w)
 		if i == m.cursor {
-			b.WriteString(selectedStyle.Render(line) + "\n")
+			b.WriteString(tblSelStyle.Render(line) + "\n")
 		} else {
-			b.WriteString(rowStyle.Render(line) + "\n")
+			b.WriteString(tblRowStyle.Render(line) + "\n")
 		}
 	}
 
-	scrollInfo := ""
-	if m.scrollX > 0 {
-		scrollInfo = fmt.Sprintf(" • scroll: %d", m.scrollX)
-	}
-	b.WriteString("\n" + tableHelpStyle.Render("q: back • j/k: navigate • h/l: scroll left/right • n/p: page • r: refresh"+scrollInfo))
-
 	return b.String()
+}
+
+func (m TableModel) View() string {
+	return m.ViewPanel(m.width, m.height)
 }

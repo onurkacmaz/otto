@@ -2,7 +2,6 @@ package ui
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
-
 	"otto/db"
 )
 
@@ -10,17 +9,13 @@ type appState int
 
 const (
 	stateConnect appState = iota
-	stateBrowse
-	stateTable
-	stateEditor
+	stateMain
 )
 
 type App struct {
 	state   appState
 	connect ConnectModel
-	browse  BrowseModel
-	table   TableModel
-	editor  EditorModel
+	main    MainModel
 	width   int
 	height  int
 }
@@ -47,22 +42,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case ConnectedMsg:
 		db.SaveConnection(msg.Cfg)
-		a.browse = NewBrowseModel(msg.DB, msg.Cfg, a.width, a.height)
-		a.state = stateBrowse
-		return a, a.browse.Init()
-	case TableSelectedMsg:
-		a.table = NewTableModel(msg.DB, msg.Schema, msg.Name, a.width, a.height)
-		a.state = stateTable
-		return a, a.table.Init()
-	case OpenEditorMsg:
-		a.editor = NewEditorModel(msg.DB, a.width, a.height)
-		a.state = stateEditor
-		return a, a.editor.Init()
-	case GoBackMsg:
-		a.state = stateBrowse
-		return a, nil
+		a.main = NewMainModel(msg.DB, msg.Cfg, a.width, a.height)
+		a.state = stateMain
+		return a, a.main.Init()
 	case GoBackToConnectMsg:
 		a.connect = NewConnectModel()
+		a.connect.width = a.width
+		a.connect.height = a.height
 		a.state = stateConnect
 		return a, a.connect.Init()
 	}
@@ -72,17 +58,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		updated, cmd := a.connect.Update(msg)
 		a.connect = updated.(ConnectModel)
 		return a, cmd
-	case stateBrowse:
-		updated, cmd := a.browse.Update(msg)
-		a.browse = updated.(BrowseModel)
-		return a, cmd
-	case stateTable:
-		updated, cmd := a.table.Update(msg)
-		a.table = updated.(TableModel)
-		return a, cmd
-	case stateEditor:
-		updated, cmd := a.editor.Update(msg)
-		a.editor = updated.(EditorModel)
+	case stateMain:
+		updated, cmd := a.main.Update(msg)
+		a.main = updated.(MainModel)
 		return a, cmd
 	}
 
@@ -93,12 +71,8 @@ func (a App) View() string {
 	switch a.state {
 	case stateConnect:
 		return a.connect.View()
-	case stateBrowse:
-		return a.browse.View()
-	case stateTable:
-		return a.table.View()
-	case stateEditor:
-		return a.editor.View()
+	case stateMain:
+		return a.main.View()
 	}
 	return ""
 }

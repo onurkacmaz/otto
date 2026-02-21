@@ -4,23 +4,26 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-
 	"otto/db"
 )
 
-type editorMode int
+type editorFocus int
 
 const (
-	modeEditing editorMode = iota
+	modeEditing editorFocus = iota
 	modeResults
 )
 
+type editorMode = editorFocus
+
 type queryResultMsg struct {
-	result *db.QueryResult
+	result  *db.QueryResult
+	elapsed time.Duration
 }
 
 type queryErrMsg struct {
@@ -30,9 +33,11 @@ type queryErrMsg struct {
 type EditorModel struct {
 	db        db.DB
 	textarea  textarea.Model
-	mode      editorMode
+	mode      editorFocus
 	result    *db.QueryResult
+	elapsed   time.Duration
 	err       error
+	running   bool
 	cursor    int
 	scrollX   int
 	width     int
@@ -41,11 +46,16 @@ type EditorModel struct {
 }
 
 func NewEditorModel(d db.DB, width, height int) EditorModel {
+	editorH := editorHeight(height)
 	ta := textarea.New()
 	ta.Placeholder = "SELECT * FROM ..."
+	placeholderSty := lipgloss.NewStyle().Foreground(lipgloss.Color("#555577"))
+	ta.FocusedStyle.Placeholder = placeholderSty
+	ta.BlurredStyle.Placeholder = placeholderSty
 	ta.SetWidth(width - 4)
-	ta.SetHeight(8)
+	ta.SetHeight(editorH - 2)
 	ta.Focus()
+	ta.ShowLineNumbers = true
 
 	return EditorModel{
 		db:       d,
@@ -54,6 +64,17 @@ func NewEditorModel(d db.DB, width, height int) EditorModel {
 		width:    width,
 		height:   height,
 	}
+}
+
+func editorHeight(totalH int) int {
+	h := totalH * 2 / 5
+	if h < 6 {
+		h = 6
+	}
+	if h > 18 {
+		h = 18
+	}
+	return h
 }
 
 func (m EditorModel) Init() tea.Cmd {
@@ -66,12 +87,15 @@ func (m *EditorModel) calcColWidths() {
 	}
 	m.colWidths = make([]int, len(m.result.Columns))
 	for i, col := range m.result.Columns {
-		m.colWidths[i] = len(col)
+		m.colWidths[i] = len([]rune(col))
 	}
 	for _, row := range m.result.Rows {
 		for i, val := range row {
-			if len(val) > m.colWidths[i] {
-				m.colWidths[i] = len(val)
+			if idx := strings.IndexAny(val, "\n\r"); idx >= 0 {
+				val = val[:idx]
+			}
+			if l := len([]rune(val)); l > m.colWidths[i] {
+				m.colWidths[i] = l
 			}
 			if m.colWidths[i] > 30 {
 				m.colWidths[i] = 30
@@ -85,69 +109,86 @@ func (m EditorModel) execQuery() tea.Msg {
 	if query == "" {
 		return queryErrMsg{err: fmt.Errorf("empty query")}
 	}
+	start := time.Now()
 	result, err := m.db.ExecQuery(context.Background(), query)
 	if err != nil {
 		return queryErrMsg{err: err}
 	}
-	return queryResultMsg{result: result}
+	return queryResultMsg{result: result, elapsed: time.Since(start)}
 }
 
-func (m EditorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m EditorModel) Update(msg tea.Msg) (EditorModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		edH := editorHeight(msg.Height)
 		m.textarea.SetWidth(msg.Width - 4)
+		m.textarea.SetHeight(edH - 2)
+
 	case queryResultMsg:
 		m.result = msg.result
+		m.elapsed = msg.elapsed
 		m.err = nil
 		m.cursor = 0
 		m.scrollX = 0
+		m.running = false
 		m.mode = modeResults
 		m.calcColWidths()
+
 	case queryErrMsg:
 		m.err = msg.err
 		m.result = nil
+		m.running = false
 		m.mode = modeResults
+
 	case tea.KeyMsg:
-		switch m.mode {
-		case modeEditing:
-			switch msg.String() {
-			case "esc":
-				return m, func() tea.Msg { return GoBackMsg{} }
-			case "ctrl+e":
+		switch msg.String() {
+		case "ctrl+e":
+			if !m.running {
+				m.running = true
 				return m, m.execQuery
-			default:
-				var cmd tea.Cmd
-				m.textarea, cmd = m.textarea.Update(msg)
-				return m, cmd
 			}
-		case modeResults:
-			switch msg.String() {
-			case "esc":
-				return m, func() tea.Msg { return GoBackMsg{} }
-			case "e":
+			return m, nil
+		case "esc":
+			return m, func() tea.Msg { return GoBackMsg{} }
+		case "ctrl+r":
+			if m.mode == modeEditing {
+				m.mode = modeResults
+				m.textarea.Blur()
+			} else {
 				m.mode = modeEditing
 				m.textarea.Focus()
 				return m, textarea.Blink
-			case "j", "down":
-				if m.result != nil && m.cursor < len(m.result.Rows)-1 {
-					m.cursor++
-				}
-			case "k", "up":
-				if m.cursor > 0 {
-					m.cursor--
-				}
-			case "l", "right":
-				m.scrollX += 5
-			case "h", "left":
-				if m.scrollX >= 5 {
-					m.scrollX -= 5
-				} else {
-					m.scrollX = 0
-				}
+			}
+			return m, nil
+		}
+
+		if m.mode == modeEditing {
+			var cmd tea.Cmd
+			m.textarea, cmd = m.textarea.Update(msg)
+			return m, cmd
+		}
+
+		switch msg.String() {
+		case "j", "down":
+			if m.result != nil && m.cursor < len(m.result.Rows)-1 {
+				m.cursor++
+			}
+		case "k", "up":
+			if m.cursor > 0 {
+				m.cursor--
+			}
+		case "l", "right":
+			m.scrollX += 5
+		case "h", "left":
+			if m.scrollX >= 5 {
+				m.scrollX -= 5
+			} else {
+				m.scrollX = 0
 			}
 		}
+
 	default:
 		if m.mode == modeEditing {
 			var cmd tea.Cmd
@@ -159,68 +200,138 @@ func (m EditorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 var (
-	editorTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FF6F61"))
-	editorHelpStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).MarginTop(1)
-	editorErrStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000"))
+	edBorderActive = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#FF6F61"))
+
+	edBorderInactive = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("#30363D"))
+
+	edLabelStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#FF6F61"))
+
+	edLabelInactiveStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("#8B949E"))
+
+	edStatusOk  = lipgloss.NewStyle().Foreground(lipgloss.Color("#3FB950"))
+	edStatusErr = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF5555"))
+	edStatusRun = lipgloss.NewStyle().Foreground(lipgloss.Color("#E3B341"))
+	edHintStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#444455"))
 )
 
-func (m EditorModel) View() string {
+func (m EditorModel) ViewPanel(w, h int) string {
+	edH := editorHeight(h)
+	innerW := w - 2
+
+	m.textarea.SetWidth(innerW - 2)
+	m.textarea.SetHeight(edH - 2)
+
+	hint := edHintStyle.Render("Ctrl+E run  ·  Ctrl+R editor↔results  ·  Tab sidebar")
+	hintW := lipgloss.Width(hint)
+	label := " SQL Editor "
+	gap := innerW - len(label) - hintW
+	if gap < 0 {
+		gap = 0
+	}
+	editorTitle := edLabelStyle.Render(label) +
+		strings.Repeat(" ", gap) +
+		hint
+
+	editorInner := editorTitle + "\n" + m.textarea.View()
+
+	edBorder := edBorderInactive
+	if m.mode == modeEditing {
+		edBorder = edBorderActive
+	}
+	editorBox := edBorder.
+		Width(innerW).
+		Height(edH - 2).
+		Render(editorInner)
+
+	var statusLine string
+	switch {
+	case m.running:
+		statusLine = edStatusRun.Render(" ⟳  Running...")
+	case m.err != nil:
+		msg := m.err.Error()
+		if len(msg) > w-6 {
+			msg = msg[:w-6] + "…"
+		}
+		statusLine = edStatusErr.Render(" ✗  " + msg)
+	case m.result != nil:
+		statusLine = edStatusOk.Render(fmt.Sprintf(" ✓  %d rows  (%dms)",
+			len(m.result.Rows), m.elapsed.Milliseconds()))
+	default:
+		statusLine = edHintStyle.Render(" ─  no results yet")
+	}
+
+	resultsH := h - edH - 1 - 2
+	if resultsH < 3 {
+		resultsH = 3
+	}
+
+	resBorder := edBorderInactive
+	if m.mode == modeResults {
+		resBorder = edBorderActive
+	}
+
+	resLabelSty := edLabelInactiveStyle
+	if m.mode == modeResults {
+		resLabelSty = edLabelStyle
+	}
+	resTitle := resLabelSty.Render(" Results ")
+
+	resultsInner := resTitle + "\n" + m.renderResults(innerW-2, resultsH-2)
+
+	resultsBox := resBorder.
+		Width(innerW).
+		Height(resultsH).
+		Render(resultsInner)
+
+	return editorBox + "\n" + statusLine + "\n" + resultsBox
+}
+
+func (m EditorModel) renderResults(w, h int) string {
+	if m.err != nil {
+		return edStatusErr.Render(" " + m.err.Error())
+	}
+	if m.result == nil {
+		return edHintStyle.Render(" Run a query with Ctrl+E")
+	}
+	if len(m.result.Rows) == 0 {
+		return edHintStyle.Render(" Query returned 0 rows")
+	}
+
+	visibleRows := h - 2
+	if visibleRows < 1 {
+		visibleRows = 1
+	}
+
 	var b strings.Builder
 
-	b.WriteString(editorTitleStyle.Render(" SQL Editor") + "\n\n")
-
-	if m.mode == modeEditing {
-		b.WriteString(m.textarea.View() + "\n")
-		b.WriteString(editorHelpStyle.Render("ctrl+e: execute • esc: back to browse"))
-		return b.String()
-	}
-
-	if m.err != nil {
-		b.WriteString(editorErrStyle.Render(fmt.Sprintf("Error: %v", m.err)) + "\n\n")
-		b.WriteString(editorHelpStyle.Render("e: edit query • esc: back to browse"))
-		return b.String()
-	}
-
-	if m.result == nil {
-		b.WriteString("No results.\n")
-		b.WriteString(editorHelpStyle.Render("e: edit query • esc: back to browse"))
-		return b.String()
-	}
-
-	w := m.width
-	if w == 0 {
-		w = 80
-	}
-	visibleRows := m.height - 10
-	if visibleRows < 1 {
-		visibleRows = 10
-	}
-
-	rowCount := len(m.result.Rows)
-	info := fmt.Sprintf(" Results: %d rows", rowCount)
-	b.WriteString(headerStyle.Render(info) + "\n\n")
-
-	var headerCells []string
-	var separators []string
+	var headerCells, separators []string
 	for i, col := range m.result.Columns {
 		cw := m.colWidths[i]
 		headerCells = append(headerCells, padRight(col, cw))
 		separators = append(separators, strings.Repeat("─", cw))
 	}
 
-	headerLine := " │ " + strings.Join(headerCells, " │ ") + " │"
-	sepLine := " ├─" + strings.Join(separators, "─┼─") + "─┤"
+	headerLine := "│ " + strings.Join(headerCells, " │ ") + " │"
+	sepLine := "├─" + strings.Join(separators, "─┼─") + "─┤"
 
-	b.WriteString(headerStyle.Render(truncateLine(headerLine, m.scrollX, w)) + "\n")
-	b.WriteString(borderStyle.Render(truncateLine(sepLine, m.scrollX, w)) + "\n")
+	b.WriteString(tblHeaderStyle.Render(clipLine(truncateLine(headerLine, m.scrollX, w), w)) + "\n")
+	b.WriteString(tblBorderStyle.Render(clipLine(truncateLine(sepLine, m.scrollX, w), w)) + "\n")
 
 	viewStart := 0
 	if m.cursor >= visibleRows {
 		viewStart = m.cursor - visibleRows + 1
 	}
 	endRow := viewStart + visibleRows
-	if endRow > rowCount {
-		endRow = rowCount
+	if endRow > len(m.result.Rows) {
+		endRow = len(m.result.Rows)
 	}
 
 	for i := viewStart; i < endRow; i++ {
@@ -229,20 +340,18 @@ func (m EditorModel) View() string {
 		for j, val := range row {
 			cells = append(cells, padRight(val, m.colWidths[j]))
 		}
-		line := " │ " + strings.Join(cells, " │ ") + " │"
-		line = truncateLine(line, m.scrollX, w)
+		line := "│ " + strings.Join(cells, " │ ") + " │"
+		line = clipLine(truncateLine(line, m.scrollX, w), w)
 		if i == m.cursor {
-			b.WriteString(selectedStyle.Render(line) + "\n")
+			b.WriteString(tblSelStyle.Render(line) + "\n")
 		} else {
-			b.WriteString(rowStyle.Render(line) + "\n")
+			b.WriteString(tblRowStyle.Render(line) + "\n")
 		}
 	}
 
-	scrollInfo := ""
-	if m.scrollX > 0 {
-		scrollInfo = fmt.Sprintf(" • scroll: %d", m.scrollX)
-	}
-	b.WriteString("\n" + editorHelpStyle.Render("e: edit query • j/k: navigate • h/l: scroll • esc: back to browse"+scrollInfo))
-
 	return b.String()
+}
+
+func (m EditorModel) View() string {
+	return m.ViewPanel(m.width, m.height)
 }
