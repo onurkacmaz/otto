@@ -6,6 +6,7 @@ import (
 )
 
 type Config struct {
+	Name     string `json:"name,omitempty"`
 	Driver   Driver `json:"driver,omitempty"`
 	Host     string `json:"host,omitempty"`
 	Port     string `json:"port,omitempty"`

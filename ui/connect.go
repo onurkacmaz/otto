@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -12,7 +13,8 @@ import (
 )
 
 const (
-	fieldDriver = iota
+	fieldName = iota
+	fieldDriver
 	fieldHost
 	fieldPort
 	fieldUser
@@ -22,21 +24,28 @@ const (
 )
 
 var (
+	accentColor = lipgloss.Color("#FF6F61")
+	mutedColor  = lipgloss.Color("#555566")
+	dimColor    = lipgloss.Color("#30363D")
+	textColor   = lipgloss.Color("#DADADA")
+	darkColor   = lipgloss.Color("#0D1117")
+	greenColor  = lipgloss.Color("#3FB950")
+
 	titleStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("#FF6F61")).
+			Foreground(accentColor).
 			MarginBottom(1)
 
 	inputStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FAFAFA"))
+			Foreground(textColor)
 
 	activeInputStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#FF6F61")).
+				Foreground(accentColor).
 				Bold(true)
 
 	buttonStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#000")).
-			Background(lipgloss.Color("#FF6F61")).
+			Background(accentColor).
 			Padding(0, 3).
 			MarginTop(1)
 
@@ -45,11 +54,95 @@ var (
 			MarginTop(1)
 
 	historySelectedStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#FF6F61")).
+				Foreground(accentColor).
 				Bold(true)
 
 	historyItemStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#AAAAAA"))
+				Foreground(lipgloss.Color("#8B949E"))
+)
+
+var (
+	panelStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(dimColor).
+			Padding(1, 2)
+
+	panelW = 54
+
+	cHeaderTitle = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
+	cHeaderDB    = lipgloss.NewStyle().Foreground(textColor).Bold(true)
+	cHeaderSep   = lipgloss.NewStyle().Foreground(dimColor)
+
+	driverOnStyle = lipgloss.NewStyle().
+			Background(accentColor).
+			Foreground(darkColor).
+			Bold(true).
+			Padding(0, 1)
+
+	driverOffStyle = lipgloss.NewStyle().
+			Foreground(mutedColor).
+			Padding(0, 1)
+
+	driverHintStyle = lipgloss.NewStyle().
+			Foreground(mutedColor).
+			Italic(true)
+
+	fieldLabelActive = lipgloss.NewStyle().
+				Foreground(accentColor).
+				Bold(true).
+				Width(9)
+
+	fieldLabelInactive = lipgloss.NewStyle().
+				Foreground(mutedColor).
+				Width(9)
+
+	fieldArrow = lipgloss.NewStyle().Foreground(accentColor).Bold(true)
+	fieldGap   = lipgloss.NewStyle().Foreground(dimColor)
+
+	btnConnect = lipgloss.NewStyle().
+			Background(accentColor).
+			Foreground(darkColor).
+			Bold(true).
+			Padding(0, 3)
+
+	btnConnecting = lipgloss.NewStyle().
+			Foreground(mutedColor).
+			Padding(0, 3)
+
+	errStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF4444"))
+
+	cHelpStyle = lipgloss.NewStyle().Foreground(mutedColor)
+
+	histPanelStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(accentColor).
+			Padding(1, 2)
+
+	histTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(textColor)
+
+	histNumStyle = lipgloss.NewStyle().
+			Foreground(accentColor).
+			Bold(true).
+			Width(2)
+
+	histNumMutedStyle = lipgloss.NewStyle().
+				Foreground(mutedColor).
+				Width(2)
+
+	histTagPGStyle = lipgloss.NewStyle().
+			Background(lipgloss.Color("#1C4E80")).
+			Foreground(lipgloss.Color("#79C0FF")).
+			Padding(0, 1)
+
+	histTagMYStyle = lipgloss.NewStyle().
+			Background(lipgloss.Color("#3B2300")).
+			Foreground(lipgloss.Color("#F7A663")).
+			Padding(0, 1)
+
+	histNameActiveStyle = lipgloss.NewStyle().Foreground(textColor).Bold(true)
+	histNameStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("#8B949E"))
+
+	histHelpStyle = lipgloss.NewStyle().Foreground(mutedColor)
 )
 
 type ConnectedMsg struct {
@@ -80,11 +173,16 @@ func NewConnectModel() ConnectModel {
 	for i := range inputs {
 		t := textinput.New()
 		t.CharLimit = 64
+		t.PromptStyle = lipgloss.NewStyle()
+		t.TextStyle = lipgloss.NewStyle().Foreground(textColor)
+		t.Prompt = ""
 
 		switch i {
+		case fieldName:
+			t.Placeholder = "My Production DB  (optional)"
+			t.Focus()
 		case fieldDriver:
 			t.Placeholder = "postgres"
-			t.Focus()
 		case fieldHost:
 			t.Placeholder = "localhost"
 		case fieldPort:
@@ -97,7 +195,6 @@ func NewConnectModel() ConnectModel {
 		case fieldDBName:
 			t.Placeholder = "mydb"
 		}
-
 		inputs[i] = t
 	}
 
@@ -105,7 +202,7 @@ func NewConnectModel() ConnectModel {
 
 	return ConnectModel{
 		inputs:          inputs,
-		focused:         0,
+		focused:         fieldName,
 		history:         history,
 		selectedHistory: -1,
 		showHistory:     len(history) > 0,
@@ -113,9 +210,7 @@ func NewConnectModel() ConnectModel {
 	}
 }
 
-func (m ConnectModel) Init() tea.Cmd {
-	return textinput.Blink
-}
+func (m ConnectModel) Init() tea.Cmd { return textinput.Blink }
 
 func (m *ConnectModel) applyDriverDefaults() {
 	if m.driver == db.DriverMySQL {
@@ -147,6 +242,7 @@ func (m *ConnectModel) connectToHistory(idx int) tea.Cmd {
 	if m.driver == "" {
 		m.driver = db.DriverPostgres
 	}
+	m.inputs[fieldName].SetValue(cfg.Name)
 	m.inputs[fieldDriver].SetValue(string(m.driver))
 	m.inputs[fieldHost].SetValue(cfg.Host)
 	m.inputs[fieldPort].SetValue(cfg.Port)
@@ -171,6 +267,7 @@ func (m ConnectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		return m, nil
+
 	case tea.KeyMsg:
 		if m.showHistory {
 			switch msg.Type {
@@ -186,14 +283,10 @@ func (m ConnectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			case tea.KeyEnter:
 				if m.selectedHistory >= 0 {
-					cmd := m.connectToHistory(m.selectedHistory)
-					return m, cmd
+					return m, m.connectToHistory(m.selectedHistory)
 				}
 				return m, nil
-			case tea.KeyTab:
-				m.showHistory = false
-				return m, nil
-			case tea.KeyEsc:
+			case tea.KeyTab, tea.KeyEsc:
 				m.showHistory = false
 				return m, nil
 			}
@@ -202,10 +295,8 @@ func (m ConnectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if r >= '1' && r <= '9' {
 					idx := int(r - '1')
 					if idx < len(m.history) {
-						cmd := m.connectToHistory(idx)
-						return m, cmd
+						return m, m.connectToHistory(idx)
 					}
-					return m, nil
 				}
 			}
 			return m, nil
@@ -217,16 +308,20 @@ func (m ConnectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.focused = (m.focused + 1) % fieldCount
 			m.inputs[m.focused].Focus()
 			return m, nil
-
 		case tea.KeyUp:
 			m.inputs[m.focused].Blur()
 			m.focused = (m.focused - 1 + fieldCount) % fieldCount
 			m.inputs[m.focused].Focus()
 			return m, nil
-
 		case tea.KeyTab:
 			if m.focused == fieldDriver {
 				m.toggleDriver()
+				return m, nil
+			}
+			if m.focused == fieldName {
+				m.inputs[m.focused].Blur()
+				m.focused = fieldDriver
+				m.inputs[m.focused].Focus()
 				return m, nil
 			}
 			if len(m.history) > 0 {
@@ -234,9 +329,8 @@ func (m ConnectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.selectedHistory < 0 {
 					m.selectedHistory = 0
 				}
-				return m, nil
 			}
-
+			return m, nil
 		case tea.KeyEnter:
 			if m.connecting {
 				return m, nil
@@ -244,6 +338,7 @@ func (m ConnectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.connecting = true
 			m.err = nil
 			cfg := db.Config{
+				Name:     m.inputs[fieldName].Value(),
 				Driver:   m.driver,
 				Host:     m.inputs[fieldHost].Value(),
 				Port:     m.inputs[fieldPort].Value(),
@@ -266,102 +361,189 @@ func (m ConnectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if m.focused == fieldDriver {
-		return m, nil
+	if m.focused != fieldDriver {
+		var cmd tea.Cmd
+		m.inputs[m.focused], cmd = m.inputs[m.focused].Update(msg)
+		return m, cmd
 	}
-
-	var cmd tea.Cmd
-	m.inputs[m.focused], cmd = m.inputs[m.focused].Update(msg)
-	return m, cmd
+	return m, nil
 }
 
+func (m ConnectModel) labelWidth() int { return 10 }
+
 func (m ConnectModel) View() string {
-	labels := []string{"Driver", "Host", "Port", "User", "Password", "Database"}
-
-	driverIcon := "🐘"
-	driverName := "PostgreSQL"
-	if m.driver == db.DriverMySQL {
-		driverIcon = "🐬"
-		driverName = "MySQL"
-	}
-	s := titleStyle.Render(driverIcon+" "+driverName+" Connection") + "\n\n"
-
-	if m.showHistory && len(m.history) > 0 {
-		s += lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FAFAFA")).Render("Recent Connections") + "\n"
-		max := len(m.history)
-		if max > 9 {
-			max = 9
-		}
-		for i := 0; i < max; i++ {
-			name := db.DisplayName(m.history[i])
-			prefix := fmt.Sprintf(" %d ", i+1)
-			if i == m.selectedHistory {
-				s += historySelectedStyle.Render("▸"+prefix+name) + "\n"
-			} else {
-				s += historyItemStyle.Render(" "+prefix+name) + "\n"
-			}
-		}
-		s += "\n" + helpStyle.Render("↑/↓: select • Enter/1-9: connect • Tab/Esc: back to form")
-
-		w := m.width
-		h := m.height
-		if w == 0 {
-			w = 80
-		}
-		if h == 0 {
-			h = 24
-		}
-		return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, s)
-	}
-
-	for i, input := range m.inputs {
-		label := labels[i]
-		if i == fieldDriver {
-			driverVal := "postgres"
-			if m.driver == db.DriverMySQL {
-				driverVal = "mysql"
-			}
-			if i == m.focused {
-				s += activeInputStyle.Render("▸ "+label+": "+driverVal+" (Tab to switch)") + "\n"
-			} else {
-				s += inputStyle.Render("  "+label+": "+driverVal) + "\n"
-			}
-			continue
-		}
-		if i == m.focused {
-			s += activeInputStyle.Render("▸ "+label+": ") + input.View() + "\n"
-		} else {
-			s += inputStyle.Render("  "+label+": ") + input.View() + "\n"
-		}
-	}
-
-	if m.err != nil {
-		errMsg := m.err.Error()
-		maxErrLen := 60
-		if len(errMsg) > maxErrLen {
-			errMsg = errMsg[:maxErrLen] + "..."
-		}
-		errStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000"))
-		s += "\n" + errStyle.Render("Error: "+errMsg) + "\n"
-	} else if m.connecting {
-		s += "\n" + helpStyle.Render("Connecting...") + "\n"
-	} else {
-		s += "\n" + buttonStyle.Render("Connect") + "\n"
-	}
-
-	helpText := "↑/↓: navigate • Enter: connect • Ctrl+C: quit"
-	if len(m.history) > 0 {
-		helpText += " • Tab: history"
-	}
-	s += helpStyle.Render(helpText)
-
-	w := m.width
-	h := m.height
+	w, h := m.width, m.height
 	if w == 0 {
 		w = 80
 	}
 	if h == 0 {
 		h = 24
 	}
-	return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, s)
+
+	var panel string
+	if m.showHistory && len(m.history) > 0 {
+		panel = m.renderHistory()
+	} else {
+		panel = m.renderForm()
+	}
+	return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, panel)
+}
+
+func (m ConnectModel) renderForm() string {
+	icon, dbName := "🐘", "PostgreSQL"
+	if m.driver == db.DriverMySQL {
+		icon, dbName = "🐬", "MySQL"
+	}
+
+	sep := lipgloss.NewStyle().Foreground(dimColor).Render(strings.Repeat("─", panelW-4))
+
+	leftH := cHeaderTitle.Render(icon + "  otto")
+	rightH := cHeaderDB.Render(dbName)
+	gap := (panelW - 4) - lipgloss.Width(leftH) - lipgloss.Width(rightH)
+	if gap < 1 {
+		gap = 1
+	}
+	header := leftH + strings.Repeat(" ", gap) + rightH
+
+	labels := []string{"Name", "Driver", "Host", "Port", "User", "Password", "Database"}
+	var rows []string
+
+	for i, inp := range m.inputs {
+		active := i == m.focused
+		label := labels[i]
+
+		lbl := fieldLabelInactive.Render(label)
+		if active {
+			lbl = fieldLabelActive.Render(label)
+		}
+
+		var val string
+		if i == fieldDriver {
+			pgS, myS := driverOffStyle, driverOffStyle
+			if m.driver == db.DriverPostgres {
+				pgS = driverOnStyle
+			} else {
+				myS = driverOnStyle
+			}
+			hint := driverHintStyle.Render("Tab to switch")
+			val = pgS.Render("postgres") +
+				fieldGap.Render("  ·  ") +
+				myS.Render("mysql") +
+				"  " + hint
+		} else {
+			val = inp.View()
+		}
+
+		var row string
+		if active {
+			row = fieldArrow.Render("▸") + " " + lbl + "  " + val
+		} else {
+			row = "  " + lbl + "  " + val
+		}
+
+		rows = append(rows, row)
+		if i == fieldName {
+			rows = append(rows, sep)
+		}
+	}
+	fields := strings.Join(rows, "\n")
+
+	var status string
+	switch {
+	case m.err != nil:
+		msg := m.err.Error()
+		if len(msg) > panelW-4 {
+			msg = msg[:panelW-4] + "…"
+		}
+		status = errStyle.Render("✕  " + msg)
+	case m.connecting:
+		status = btnConnecting.Render("⟳  Connecting…")
+	default:
+		btn := btnConnect.Render("  Connect  ")
+		bw := lipgloss.Width(btn)
+		pad := (panelW - bw) / 2
+		if pad < 0 {
+			pad = 0
+		}
+		status = strings.Repeat(" ", pad) + btn
+	}
+
+	helpParts := []string{"↑↓ navigate", "Enter connect", "Ctrl+C quit"}
+	if len(m.history) > 0 {
+		helpParts = append(helpParts, "Tab history")
+	}
+	hint := cHelpStyle.Render(strings.Join(helpParts, "  ·  "))
+
+	inner := lipgloss.JoinVertical(lipgloss.Left,
+		header,
+		sep,
+		fields,
+		"",
+		status,
+		"",
+		hint,
+	)
+
+	return panelStyle.Width(panelW).Render(inner)
+}
+
+func (m ConnectModel) renderHistory() string {
+	title := histTitleStyle.Render("Recent Connections")
+	sep := lipgloss.NewStyle().Foreground(dimColor).Render(strings.Repeat("─", panelW-4))
+
+	max := len(m.history)
+	if max > 9 {
+		max = 9
+	}
+
+	var rows []string
+	for i := 0; i < max; i++ {
+		cfg := m.history[i]
+		active := i == m.selectedHistory
+
+		var num string
+		if active {
+			num = histNumStyle.Render(fmt.Sprintf("%d", i+1))
+		} else {
+			num = histNumMutedStyle.Render(fmt.Sprintf("%d", i+1))
+		}
+
+		var tag string
+		if cfg.Driver == db.DriverMySQL {
+			tag = histTagMYStyle.Render("my")
+		} else {
+			tag = histTagPGStyle.Render("pg")
+		}
+
+		name := db.DisplayName(cfg)
+		if len(name) > panelW-14 {
+			name = name[:panelW-17] + "…"
+		}
+		var nameStr string
+		if active {
+			nameStr = histNameActiveStyle.Render(name)
+		} else {
+			nameStr = histNameStyle.Render(name)
+		}
+
+		if active {
+			rows = append(rows, fieldArrow.Render("▸")+" "+num+"  "+tag+"  "+nameStr)
+		} else {
+			rows = append(rows, "  "+num+"  "+tag+"  "+nameStr)
+		}
+	}
+
+	list := strings.Join(rows, "\n")
+	hint := histHelpStyle.Render("↑↓ select  ·  Enter/1-9 connect  ·  Esc back")
+
+	inner := lipgloss.JoinVertical(lipgloss.Left,
+		title,
+		sep,
+		"",
+		list,
+		"",
+		hint,
+	)
+
+	return histPanelStyle.Width(panelW).Render(inner)
 }

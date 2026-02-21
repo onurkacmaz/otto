@@ -15,6 +15,9 @@ func historyPath() string {
 }
 
 func DisplayName(cfg Config) string {
+	if cfg.Name != "" {
+		return cfg.Name
+	}
 	host := cfg.Host
 	if host == "" {
 		host = "localhost"
@@ -22,10 +25,8 @@ func DisplayName(cfg Config) string {
 	user := cfg.User
 	dbname := cfg.DBName
 
-	prefix := "[PG] "
 	port := cfg.Port
 	if cfg.Driver == DriverMySQL {
-		prefix = "[MY] "
 		if port == "" {
 			port = "3306"
 		}
@@ -43,7 +44,7 @@ func DisplayName(cfg Config) string {
 			dbname = "postgres"
 		}
 	}
-	return prefix + user + "@" + host + ":" + port + "/" + dbname
+	return user + "@" + host + ":" + port + "/" + dbname
 }
 
 func matchKey(a, b Config) bool {
