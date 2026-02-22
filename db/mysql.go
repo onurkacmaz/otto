@@ -43,6 +43,28 @@ func (d *mysqlDB) ListTables(ctx context.Context) ([]Table, error) {
 	return tables, rows.Err()
 }
 
+func (d *mysqlDB) ListColumns(ctx context.Context) ([]Column, error) {
+	query := `SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME
+	          FROM INFORMATION_SCHEMA.COLUMNS
+	          WHERE (DATABASE() IS NOT NULL AND TABLE_SCHEMA = DATABASE())
+	             OR (DATABASE() IS NULL AND TABLE_SCHEMA NOT IN ('information_schema','mysql','performance_schema','sys'))
+	          ORDER BY TABLE_NAME, ORDINAL_POSITION`
+	rows, err := d.conn.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var cols []Column
+	for rows.Next() {
+		var c Column
+		if err := rows.Scan(&c.Schema, &c.Table, &c.Name); err != nil {
+			return nil, err
+		}
+		cols = append(cols, c)
+	}
+	return cols, rows.Err()
+}
+
 func (d *mysqlDB) FetchTableData(ctx context.Context, schema, table string, limit, offset int) (*QueryResult, error) {
 	query := fmt.Sprintf("SELECT * FROM `%s`.`%s` LIMIT ? OFFSET ?", schema, table)
 	rows, err := d.conn.QueryContext(ctx, query, limit, offset)

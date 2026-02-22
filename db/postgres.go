@@ -34,6 +34,22 @@ func (d *pgxDB) ListTables(ctx context.Context) ([]Table, error) {
 	return table, nil
 }
 
+func (d *pgxDB) ListColumns(ctx context.Context) ([]Column, error) {
+	query := `SELECT table_schema, table_name, column_name
+	          FROM information_schema.columns
+	          WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
+	          ORDER BY table_schema, table_name, ordinal_position`
+	rows, err := d.conn.Query(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	cols, err := pgx.CollectRows(rows, pgx.RowToStructByPos[Column])
+	if err != nil {
+		return nil, err
+	}
+	return cols, nil
+}
+
 func (d *pgxDB) FetchTableData(ctx context.Context, schema, table string, limit, offset int) (*QueryResult, error) {
 	query := fmt.Sprintf(`SELECT * FROM "%s"."%s" LIMIT $1 OFFSET $2`, schema, table)
 	rows, err := d.conn.Query(ctx, query, limit, offset)

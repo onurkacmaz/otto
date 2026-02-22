@@ -30,19 +30,31 @@ type queryErrMsg struct {
 	err error
 }
 
+type tablesLoadedMsg struct {
+	tables []string
+}
+
+type columnsLoadedMsg struct {
+	columns map[string][]string
+}
+
 type EditorModel struct {
-	db        db.DB
-	textarea  textarea.Model
-	mode      editorFocus
-	result    *db.QueryResult
-	elapsed   time.Duration
-	err       error
-	running   bool
-	cursor    int
-	scrollX   int
-	width     int
-	height    int
-	colWidths []int
+	db          db.DB
+	textarea    textarea.Model
+	mode        editorFocus
+	result      *db.QueryResult
+	elapsed     time.Duration
+	err         error
+	running     bool
+	cursor      int
+	scrollX     int
+	width       int
+	height      int
+	colWidths   []int
+	comp        completionModel
+	tables      []string
+	columns     map[string][]string
+	lowercaseKw bool
 }
 
 func NewEditorModel(d db.DB, width, height int) EditorModel {
@@ -78,7 +90,92 @@ func editorHeight(totalH int) int {
 }
 
 func (m EditorModel) Init() tea.Cmd {
-	return textarea.Blink
+	return tea.Batch(textarea.Blink, m.loadTables, m.loadColumns)
+}
+
+func (m EditorModel) loadTables() tea.Msg {
+	tables, err := m.db.ListTables(context.Background())
+	if err != nil {
+		return nil
+	}
+	names := make([]string, len(tables))
+	for i, t := range tables {
+		names[i] = t.Name
+	}
+	return tablesLoadedMsg{tables: names}
+}
+
+func (m EditorModel) loadColumns() tea.Msg {
+	cols, err := m.db.ListColumns(context.Background())
+	if err != nil {
+		return nil
+	}
+	byTable := make(map[string][]string)
+	for _, col := range cols {
+		key := strings.ToLower(col.Table)
+		byTable[key] = append(byTable[key], col.Name)
+	}
+	return columnsLoadedMsg{columns: byTable}
+}
+
+func (m *EditorModel) currentWordContext() wordCtx {
+	val := m.textarea.Value()
+	if val == "" {
+		return wordCtx{}
+	}
+	lines := strings.Split(val, "\n")
+	lineNum := m.textarea.Line()
+	if lineNum < 0 || lineNum >= len(lines) {
+		return wordCtx{}
+	}
+	li := m.textarea.LineInfo()
+	runes := []rune(lines[lineNum])
+	pos := li.CharOffset
+	if pos < 0 {
+		pos = 0
+	}
+	if pos > len(runes) {
+		pos = len(runes)
+	}
+	before := string(runes[:pos])
+	idx := strings.LastIndexAny(before, " \t,;()\n")
+	word := before[idx+1:]
+
+	if dotIdx := strings.LastIndex(word, "."); dotIdx >= 0 {
+		return wordCtx{word: word[dotIdx+1:], table: word[:dotIdx]}
+	}
+	return wordCtx{word: word}
+}
+
+func (m *EditorModel) updateCompletions() {
+	m.comp.refresh(m.currentWordContext(), m.tables, m.columns, m.lowercaseKw)
+}
+
+func (m *EditorModel) applyCompletion() {
+	accepted := m.comp.current()
+	if accepted == "" {
+		m.comp.dismiss()
+		return
+	}
+	prefix := m.comp.prefix
+	for range []rune(prefix) {
+		m.textarea, _ = m.textarea.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	}
+	m.textarea, _ = m.textarea.Update(tea.KeyMsg{
+		Type:  tea.KeyRunes,
+		Runes: []rune(accepted),
+	})
+	if sqlKeywordSet[strings.ToLower(accepted)] {
+		m.textarea, _ = m.textarea.Update(tea.KeyMsg{
+			Type:  tea.KeyRunes,
+			Runes: []rune(" "),
+		})
+	}
+	m.comp.dismiss()
+}
+
+func (m EditorModel) CompletionActive() bool {
+	return m.mode == modeEditing && m.comp.active
 }
 
 func (m *EditorModel) calcColWidths() {
@@ -126,6 +223,12 @@ func (m EditorModel) Update(msg tea.Msg) (EditorModel, tea.Cmd) {
 		m.textarea.SetWidth(msg.Width - 4)
 		m.textarea.SetHeight(edH - 2)
 
+	case tablesLoadedMsg:
+		m.tables = msg.tables
+
+	case columnsLoadedMsg:
+		m.columns = msg.columns
+
 	case queryResultMsg:
 		m.result = msg.result
 		m.elapsed = msg.elapsed
@@ -151,10 +254,15 @@ func (m EditorModel) Update(msg tea.Msg) (EditorModel, tea.Cmd) {
 			}
 			return m, nil
 		case "esc":
+			if m.comp.active {
+				m.comp.dismiss()
+				return m, nil
+			}
 			return m, func() tea.Msg { return GoBackMsg{} }
 		case "ctrl+r":
 			if m.mode == modeEditing {
 				m.mode = modeResults
+				m.comp.dismiss()
 				m.textarea.Blur()
 			} else {
 				m.mode = modeEditing
@@ -162,11 +270,32 @@ func (m EditorModel) Update(msg tea.Msg) (EditorModel, tea.Cmd) {
 				return m, textarea.Blink
 			}
 			return m, nil
+		case "ctrl+t":
+			if m.mode == modeEditing {
+				m.lowercaseKw = !m.lowercaseKw
+				m.updateCompletions()
+			}
+			return m, nil
+		case "tab":
+			if m.mode == modeEditing && m.comp.active {
+				m.applyCompletion()
+			}
+			return m, nil
+		case "up", "down":
+			if m.mode == modeEditing && m.comp.active {
+				if msg.String() == "up" {
+					m.comp.prev()
+				} else {
+					m.comp.next()
+				}
+				return m, nil
+			}
 		}
 
 		if m.mode == modeEditing {
 			var cmd tea.Cmd
 			m.textarea, cmd = m.textarea.Update(msg)
+			m.updateCompletions()
 			return m, cmd
 		}
 
@@ -226,6 +355,8 @@ func (m EditorModel) ViewPanel(w, h int) string {
 	edH := editorHeight(h)
 	innerW := w - 2
 
+	compActive := m.mode == modeEditing && m.comp.active
+
 	m.textarea.SetWidth(innerW - 2)
 	m.textarea.SetHeight(edH - 2)
 
@@ -240,7 +371,26 @@ func (m EditorModel) ViewPanel(w, h int) string {
 		strings.Repeat(" ", gap) +
 		hint
 
-	editorInner := editorTitle + "\n" + m.textarea.View()
+	taView := m.textarea.View()
+	if compActive {
+		popup := m.comp.renderPopup()
+		if popup != "" {
+			cursorRow := m.textarea.Line()
+			popupH := strings.Count(popup, "\n") + 1
+			taLines := strings.Count(taView, "\n") + 1
+
+			startRow := cursorRow + 1
+			if startRow+popupH > taLines {
+				startRow = cursorRow - popupH
+			}
+			if startRow < 0 {
+				startRow = 0
+			}
+			taView = overlayAtRow(taView, popup, startRow)
+		}
+	}
+
+	editorInner := editorTitle + "\n" + taView
 
 	edBorder := edBorderInactive
 	if m.mode == modeEditing {

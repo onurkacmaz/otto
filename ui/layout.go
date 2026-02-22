@@ -125,6 +125,11 @@ func (m MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.sidebar.searching {
 				break
 			}
+			if m.focus == focusContent && m.content == paneEditor && m.editor.CompletionActive() {
+				var cmd tea.Cmd
+				m.editor, cmd = m.editor.Update(msg)
+				return m, cmd
+			}
 			if m.focus == focusSidebar {
 				if m.content != paneWelcome {
 					m.focus = focusContent

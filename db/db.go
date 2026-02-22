@@ -11,6 +11,7 @@ const (
 
 type DB interface {
 	ListTables(ctx context.Context) ([]Table, error)
+	ListColumns(ctx context.Context) ([]Column, error)
 	FetchTableData(ctx context.Context, schema, table string, limit, offset int) (*QueryResult, error)
 	ExecQuery(ctx context.Context, query string) (*QueryResult, error)
 	Close(ctx context.Context) error
@@ -18,6 +19,12 @@ type DB interface {
 
 type Table struct {
 	Schema string
+	Name   string
+}
+
+type Column struct {
+	Schema string
+	Table  string
 	Name   string
 }
 
