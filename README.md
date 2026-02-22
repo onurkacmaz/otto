@@ -8,7 +8,7 @@ A terminal-based database client written in Go using the Charm BubbleTea framewo
 - **Persistent sidebar** with table list and live search
 - **Split SQL editor** — editor and results always visible side by side
 - **Table viewer** with pagination and horizontal scrolling
-- **Connection history** — recent connections saved and reusable
+- **Connection history** — recent connections saved, reusable, and deletable
 
 ## Installation
 
@@ -59,7 +59,7 @@ export PATH="$HOME/.local/bin:$PATH"
 1. Select driver (Tab to toggle MySQL / PostgreSQL)
 2. Fill in host, port, user, password, database
 3. Press Enter to connect
-4. Previous connections are shown on launch — select with ↑↓ and Enter
+4. Previous connections are shown on launch — select with ↑↓ and press Enter to connect, or `d` to delete
 
 ### Navigation
 
@@ -88,6 +88,10 @@ export PATH="$HOME/.local/bin:$PATH"
 |-----|--------|
 | `Ctrl+E` | Execute query |
 | `Ctrl+R` | Switch between editor and results |
+| `↑↓` | Navigate autocomplete suggestions |
+| `Tab` | Accept autocomplete suggestion |
+| `Esc` | Dismiss autocomplete |
+| `Ctrl+T` | Toggle keyword case (UPPER / lower) |
 
 ## Requirements
 
