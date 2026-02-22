@@ -290,6 +290,19 @@ func (m ConnectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.showHistory = false
 				return m, nil
 			}
+			if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && msg.Runes[0] == 'd' {
+				if m.selectedHistory >= 0 && m.selectedHistory < len(m.history) {
+					db.DeleteConnection(m.history[m.selectedHistory])
+					m.history = db.LoadHistory()
+					if len(m.history) == 0 {
+						m.showHistory = false
+						m.selectedHistory = -1
+					} else if m.selectedHistory >= len(m.history) {
+						m.selectedHistory = len(m.history) - 1
+					}
+				}
+				return m, nil
+			}
 			if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
 				r := msg.Runes[0]
 				if r >= '1' && r <= '9' {
@@ -534,7 +547,7 @@ func (m ConnectModel) renderHistory() string {
 	}
 
 	list := strings.Join(rows, "\n")
-	hint := histHelpStyle.Render("↑↓ select  ·  Enter/1-9 connect  ·  Esc back")
+	hint := histHelpStyle.Render("↑↓ select  ·  Enter/1-9 connect  ·  d delete  ·  Esc back")
 
 	inner := lipgloss.JoinVertical(lipgloss.Left,
 		title,

@@ -63,6 +63,22 @@ func LoadHistory() []Config {
 	return history
 }
 
+func DeleteConnection(cfg Config) {
+	history := LoadHistory()
+	filtered := history[:0]
+	for _, h := range history {
+		if !matchKey(h, cfg) {
+			filtered = append(filtered, h)
+		}
+	}
+	p := historyPath()
+	data, err := json.MarshalIndent(filtered, "", "  ")
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(p, data, 0600)
+}
+
 func SaveConnection(cfg Config) {
 	history := LoadHistory()
 
