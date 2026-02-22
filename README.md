@@ -1,5 +1,9 @@
 # otto
 
+<p align="center">
+  <img src="otto.png" width="260" alt="otto mascot" />
+</p>
+
 A terminal-based database client written in Go using the Charm BubbleTea framework. Connect to MySQL and PostgreSQL databases, browse tables, and run SQL queries — all from your terminal.
 
 ## Features
