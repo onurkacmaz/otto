@@ -41,7 +41,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, tea.Quit
 		}
 	case ConnectedMsg:
-		db.SaveConnection(msg.Cfg)
+		if a.connect.editingIndex >= 0 {
+			db.UpdateConnection(a.connect.editingIndex, msg.Cfg)
+		} else {
+			db.SaveConnection(msg.Cfg)
+		}
 		a.main = NewMainModel(msg.DB, msg.Cfg, a.width, a.height)
 		a.state = stateMain
 		return a, a.main.Init()

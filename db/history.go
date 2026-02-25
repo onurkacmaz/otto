@@ -79,6 +79,20 @@ func DeleteConnection(cfg Config) {
 	_ = os.WriteFile(p, data, 0600)
 }
 
+func UpdateConnection(index int, cfg Config) {
+	history := LoadHistory()
+	if index < 0 || index >= len(history) {
+		return
+	}
+	history[index] = cfg
+	p := historyPath()
+	data, err := json.MarshalIndent(history, "", "  ")
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(p, data, 0600)
+}
+
 func SaveConnection(cfg Config) {
 	history := LoadHistory()
 

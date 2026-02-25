@@ -63,7 +63,7 @@ var (
 
 var (
 	panelW         = 54
-	histPanelW     = 46
+	histPanelW     = 54
 	sideBySideMinW = 116
 
 	cHeaderTitle = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
@@ -157,6 +157,7 @@ type ConnectModel struct {
 	selectedHistory int
 	historyFocused  bool
 	driver          db.Driver
+	editingIndex    int
 }
 
 func NewConnectModel() ConnectModel {
@@ -199,6 +200,7 @@ func NewConnectModel() ConnectModel {
 		selectedHistory: -1,
 		historyFocused:  len(history) > 0,
 		driver:          db.DriverPostgres,
+		editingIndex:    -1,
 	}
 }
 
@@ -304,6 +306,31 @@ func (m ConnectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
+			if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && msg.Runes[0] == 'e' {
+				if m.selectedHistory >= 0 && m.selectedHistory < len(m.history) {
+					cfg := m.history[m.selectedHistory]
+					m.editingIndex = m.selectedHistory
+					m.driver = cfg.Driver
+					if m.driver == "" {
+						m.driver = db.DriverPostgres
+					}
+					m.applyDriverDefaults()
+					m.inputs[fieldName].SetValue(cfg.Name)
+					m.inputs[fieldDriver].SetValue(string(m.driver))
+					m.inputs[fieldHost].SetValue(cfg.Host)
+					m.inputs[fieldPort].SetValue(cfg.Port)
+					m.inputs[fieldUser].SetValue(cfg.User)
+					m.inputs[fieldPassword].SetValue(cfg.Password)
+					m.inputs[fieldDBName].SetValue(cfg.DBName)
+					m.historyFocused = false
+					m.focused = fieldName
+					for i := range m.inputs {
+						m.inputs[i].Blur()
+					}
+					m.inputs[fieldName].Focus()
+				}
+				return m, nil
+			}
 			return m, nil
 		}
 
@@ -331,6 +358,7 @@ func (m ConnectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if len(m.history) > 0 {
 				m.historyFocused = true
+				m.editingIndex = -1
 				if m.selectedHistory < 0 {
 					m.selectedHistory = 0
 				}
@@ -384,16 +412,14 @@ func (m ConnectModel) View() string {
 	if h == 0 {
 		h = 24
 	}
-
-	// Yan yana layout: terminal yeterince genişse form + history her zaman görünür
+	
 	if len(m.history) > 0 && w >= sideBySideMinW {
 		form := m.renderForm()
 		hist := m.renderHistory()
 		panels := lipgloss.JoinHorizontal(lipgloss.Top, form, "  ", hist)
 		return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, panels)
 	}
-
-	// Dar terminal: tek panel
+	
 	if m.historyFocused && len(m.history) > 0 {
 		return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, m.renderHistory())
 	}
@@ -408,7 +434,11 @@ func (m ConnectModel) renderForm() string {
 
 	sep := lipgloss.NewStyle().Foreground(dimColor).Render(strings.Repeat("─", panelW-4))
 
-	leftH := cHeaderTitle.Render(icon + "  otto")
+	titleText := icon + "  otto"
+	if m.editingIndex >= 0 {
+		titleText = icon + "  otto  ✎ Edit"
+	}
+	leftH := cHeaderTitle.Render(titleText)
 	rightH := cHeaderDB.Render(dbName)
 	gap := (panelW - 4) - lipgloss.Width(leftH) - lipgloss.Width(rightH)
 	if gap < 1 {
@@ -470,7 +500,11 @@ func (m ConnectModel) renderForm() string {
 	case m.connecting:
 		status = btnConnecting.Render("⟳  Connecting…")
 	default:
-		btn := btnConnect.Render("  Connect  ")
+		btnText := "  Connect  "
+		if m.editingIndex >= 0 {
+			btnText = " Save & Connect "
+		}
+		btn := btnConnect.Render(btnText)
 		bw := lipgloss.Width(btn)
 		pad := (panelW - bw) / 2
 		if pad < 0 {
@@ -549,7 +583,7 @@ func (m ConnectModel) renderHistory() string {
 	}
 
 	list := strings.Join(rows, "\n")
-	hint := histHelpStyle.Render("↑↓ select · 1-9/Enter · d delete · Esc")
+	hint := histHelpStyle.Render("↑↓ select · 1-9/Enter · d delete · Esc · e Edit")
 
 	inner := lipgloss.JoinVertical(lipgloss.Left,
 		title,
