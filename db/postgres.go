@@ -50,8 +50,16 @@ func (d *pgxDB) ListColumns(ctx context.Context) ([]Column, error) {
 	return cols, nil
 }
 
-func (d *pgxDB) FetchTableData(ctx context.Context, schema, table string, limit, offset int) (*QueryResult, error) {
-	query := fmt.Sprintf(`SELECT * FROM "%s"."%s" LIMIT $1 OFFSET $2`, schema, table)
+func (d *pgxDB) FetchTableData(ctx context.Context, schema, table string, limit, offset int, sort *SortOption) (*QueryResult, error) {
+	query := fmt.Sprintf("SELECT * FROM %s.%s", quotePostgresIdent(schema), quotePostgresIdent(table))
+	if sort != nil && sort.Column != "" {
+		direction := "ASC"
+		if sort.Desc {
+			direction = "DESC"
+		}
+		query += fmt.Sprintf(" ORDER BY %s %s", quotePostgresIdent(sort.Column), direction)
+	}
+	query += " LIMIT $1 OFFSET $2"
 	rows, err := d.conn.Query(ctx, query, limit, offset)
 	if err != nil {
 		return nil, err

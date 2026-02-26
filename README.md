@@ -84,6 +84,9 @@ export PATH="$HOME/.local/bin:$PATH"
 |-----|--------|
 | `n` / `p` | Next / previous page |
 | `←→` / `h l` | Scroll columns |
+| `a` / `d` | Select previous / next column |
+| `o` | Sort by selected column (toggle ASC / DESC) |
+| `u` | Clear sorting |
 | `r` | Refresh |
 
 ### SQL editor

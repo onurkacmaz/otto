@@ -9,10 +9,15 @@ const (
 	DriverMySQL    Driver = "mysql"
 )
 
+type SortOption struct {
+	Column string
+	Desc   bool
+}
+
 type DB interface {
 	ListTables(ctx context.Context) ([]Table, error)
 	ListColumns(ctx context.Context) ([]Column, error)
-	FetchTableData(ctx context.Context, schema, table string, limit, offset int) (*QueryResult, error)
+	FetchTableData(ctx context.Context, schema, table string, limit, offset int, sort *SortOption) (*QueryResult, error)
 	ExecQuery(ctx context.Context, query string) (*QueryResult, error)
 	Close(ctx context.Context) error
 }

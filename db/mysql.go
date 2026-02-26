@@ -65,8 +65,16 @@ func (d *mysqlDB) ListColumns(ctx context.Context) ([]Column, error) {
 	return cols, rows.Err()
 }
 
-func (d *mysqlDB) FetchTableData(ctx context.Context, schema, table string, limit, offset int) (*QueryResult, error) {
-	query := fmt.Sprintf("SELECT * FROM `%s`.`%s` LIMIT ? OFFSET ?", schema, table)
+func (d *mysqlDB) FetchTableData(ctx context.Context, schema, table string, limit, offset int, sort *SortOption) (*QueryResult, error) {
+	query := fmt.Sprintf("SELECT * FROM %s.%s", quoteMySQLIdent(schema), quoteMySQLIdent(table))
+	if sort != nil && sort.Column != "" {
+		direction := "ASC"
+		if sort.Desc {
+			direction = "DESC"
+		}
+		query += fmt.Sprintf(" ORDER BY %s %s", quoteMySQLIdent(sort.Column), direction)
+	}
+	query += " LIMIT ? OFFSET ?"
 	rows, err := d.conn.QueryContext(ctx, query, limit, offset)
 	if err != nil {
 		return nil, err

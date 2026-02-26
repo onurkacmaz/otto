@@ -34,6 +34,9 @@ type TableModel struct {
 	width     int
 	height    int
 	colWidths []int
+	sortCol   int
+	sortDesc  bool
+	colCursor int
 }
 
 func NewTableModel(d db.DB, schema, name string, width, height int) TableModel {
@@ -43,11 +46,19 @@ func NewTableModel(d db.DB, schema, name string, width, height int) TableModel {
 		tableName: name,
 		width:     width,
 		height:    height,
+		sortCol:   -1,
 	}
 }
 
 func (m TableModel) loadData() tea.Msg {
-	result, err := m.db.FetchTableData(context.Background(), m.schema, m.tableName, pageSize, m.offset)
+	var sort *db.SortOption
+	if m.result != nil && m.sortCol >= 0 && m.sortCol < len(m.result.Columns) {
+		sort = &db.SortOption{
+			Column: m.result.Columns[m.sortCol],
+			Desc:   m.sortDesc,
+		}
+	}
+	result, err := m.db.FetchTableData(context.Background(), m.schema, m.tableName, pageSize, m.offset, sort)
 	if err != nil {
 		return dataErrMsg{err: err}
 	}
@@ -93,6 +104,22 @@ func (m TableModel) Update(msg tea.Msg) (TableModel, tea.Cmd) {
 		}
 		m.result = msg.result
 		m.cursor = 0
+		if len(m.result.Columns) == 0 {
+			m.colCursor = 0
+			m.sortCol = -1
+			m.sortDesc = false
+		} else {
+			if m.colCursor < 0 {
+				m.colCursor = 0
+			}
+			if m.colCursor >= len(m.result.Columns) {
+				m.colCursor = len(m.result.Columns) - 1
+			}
+			if m.sortCol >= len(m.result.Columns) {
+				m.sortCol = -1
+				m.sortDesc = false
+			}
+		}
 		m.calcColWidths()
 	case dataErrMsg:
 		m.err = msg.err
@@ -128,6 +155,34 @@ func (m TableModel) Update(msg tea.Msg) (TableModel, tea.Cmd) {
 			}
 		case "r":
 			return m, m.loadData
+		case "d":
+			if m.result != nil && m.colCursor < len(m.result.Columns)-1 {
+				m.colCursor++
+			}
+		case "a":
+			if m.result != nil && m.colCursor > 0 {
+				m.colCursor--
+			}
+		case "o":
+			if m.result != nil && len(m.result.Columns) > 0 {
+				if m.sortCol != m.colCursor {
+					m.sortCol = m.colCursor
+					m.sortDesc = false
+				} else {
+					m.sortDesc = !m.sortDesc
+				}
+				m.offset = 0
+				m.cursor = 0
+				return m, m.loadData
+			}
+		case "u":
+			if m.sortCol >= 0 {
+				m.sortCol = -1
+				m.sortDesc = false
+				m.offset = 0
+				m.cursor = 0
+				return m, m.loadData
+			}
 		}
 	}
 	return m, nil
@@ -199,13 +254,37 @@ func (m TableModel) ViewPanel(w, h int) string {
 	if rowCount == 0 {
 		startRow = 0
 	}
-	title := fmt.Sprintf(" %s.%s  (%d – %d)", m.schema, m.tableName, startRow, m.offset+rowCount)
+	sortInfo := ""
+	if m.sortCol >= 0 && m.sortCol < len(m.result.Columns) {
+		dir := "ASC"
+		if m.sortDesc {
+			dir = "DESC"
+		}
+		sortInfo = fmt.Sprintf("  · sort: %s %s", m.result.Columns[m.sortCol], dir)
+	}
+	title := fmt.Sprintf(" %s.%s  (%d – %d)%s", m.schema, m.tableName, startRow, m.offset+rowCount, sortInfo)
 	b.WriteString(tblHeaderStyle.Render(title) + "\n\n")
 
+	displayWidths := make([]int, len(m.result.Columns))
 	var headerCells, separators []string
 	for i, col := range m.result.Columns {
+		label := col
+		if i == m.sortCol {
+			if m.sortDesc {
+				label += " ↓"
+			} else {
+				label += " ↑"
+			}
+		}
+		if i == m.colCursor {
+			label = "[" + label + "]"
+		}
 		cw := m.colWidths[i]
-		headerCells = append(headerCells, padRight(col, cw))
+		if lw := len([]rune(label)); lw > cw {
+			cw = lw
+		}
+		displayWidths[i] = cw
+		headerCells = append(headerCells, padRight(label, cw))
 		separators = append(separators, strings.Repeat("─", cw))
 	}
 
@@ -228,7 +307,7 @@ func (m TableModel) ViewPanel(w, h int) string {
 		row := m.result.Rows[i]
 		var cells []string
 		for j, val := range row {
-			cells = append(cells, padRight(val, m.colWidths[j]))
+			cells = append(cells, padRight(val, displayWidths[j]))
 		}
 		line := " │ " + strings.Join(cells, " │ ") + " │"
 		line = clipLine(truncateLine(line, m.scrollX, w), w)

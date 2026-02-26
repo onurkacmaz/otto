@@ -256,7 +256,7 @@ func (m MainModel) renderFooter() string {
 	} else {
 		switch m.content {
 		case paneTable:
-			hints = "↑↓ rows  ·  ←→ scroll  ·  n/p page  ·  r refresh  ·  Tab sidebar  ·  Esc close"
+			hints = "↑↓ rows  ·  ←→ scroll  ·  a/d column  ·  o sort  ·  u clear  ·  n/p page  ·  r refresh  ·  Tab sidebar  ·  Esc close"
 		case paneEditor:
 			if m.editor.mode == modeEditing {
 				hints = "Ctrl+E run  ·  Ctrl+R editor↔results  ·  Tab sidebar  ·  Esc sidebar"
