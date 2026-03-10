@@ -64,33 +64,7 @@ func (d *pgxDB) FetchTableData(ctx context.Context, schema, table string, limit,
 	if err != nil {
 		return nil, err
 	}
-
-	defer rows.Close()
-
-	fd := rows.FieldDescriptions()
-	columns := make([]string, len(fd))
-	for i, col := range fd {
-		columns[i] = string(col.Name)
-	}
-
-	var resultRows [][]string
-	for rows.Next() {
-		values, err := rows.Values()
-		if err != nil {
-			return nil, err
-		}
-		row := make([]string, len(values))
-		for i, val := range values {
-			if val == nil {
-				row[i] = "NULL"
-			} else {
-				row[i] = fmt.Sprintf("%v", val)
-			}
-		}
-		resultRows = append(resultRows, row)
-	}
-
-	return &QueryResult{Columns: columns, Rows: resultRows}, nil
+	return readPGXRows(rows)
 }
 
 func (d *pgxDB) ExecQuery(ctx context.Context, query string) (*QueryResult, error) {
@@ -98,6 +72,10 @@ func (d *pgxDB) ExecQuery(ctx context.Context, query string) (*QueryResult, erro
 	if err != nil {
 		return nil, err
 	}
+	return readPGXRows(rows)
+}
+
+func readPGXRows(rows pgx.Rows) (*QueryResult, error) {
 	defer rows.Close()
 
 	fd := rows.FieldDescriptions()
@@ -114,13 +92,17 @@ func (d *pgxDB) ExecQuery(ctx context.Context, query string) (*QueryResult, erro
 		}
 		row := make([]string, len(values))
 		for i, val := range values {
-			if val == nil {
-				row[i] = "NULL"
-			} else {
-				row[i] = fmt.Sprintf("%v", val)
+			oid := uint32(0)
+			if i < len(fd) {
+				oid = fd[i].DataTypeOID
 			}
+			row[i] = formatPostgresValue(val, oid)
 		}
 		resultRows = append(resultRows, row)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	return &QueryResult{Columns: columns, Rows: resultRows}, nil

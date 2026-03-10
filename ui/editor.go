@@ -194,9 +194,7 @@ func (m *EditorModel) calcColWidths() {
 			if l := len([]rune(val)); l > m.colWidths[i] {
 				m.colWidths[i] = l
 			}
-			if m.colWidths[i] > 30 {
-				m.colWidths[i] = 30
-			}
+			m.colWidths[i] = clampColumnWidth(m.colWidths[i], val)
 		}
 	}
 }

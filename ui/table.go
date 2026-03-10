@@ -10,7 +10,11 @@ import (
 	"otto/db"
 )
 
-const pageSize = 50
+const (
+	pageSize      = 50
+	maxCellWidth  = 30
+	uuidCellWidth = 36
+)
 
 type dataLoadedMsg struct {
 	result *db.QueryResult
@@ -85,9 +89,7 @@ func (m *TableModel) calcColWidths() {
 			if len([]rune(val)) > m.colWidths[i] {
 				m.colWidths[i] = len([]rune(val))
 			}
-			if m.colWidths[i] > 30 {
-				m.colWidths[i] = 30
-			}
+			m.colWidths[i] = clampColumnWidth(m.colWidths[i], val)
 		}
 	}
 }
@@ -224,6 +226,40 @@ func truncateLine(s string, scrollX, maxWidth int) string {
 		runes = runes[:maxWidth]
 	}
 	return string(runes)
+}
+
+func clampColumnWidth(width int, value string) int {
+	limit := maxCellWidth
+	if looksLikeUUID(value) {
+		limit = uuidCellWidth
+	}
+	if width > limit {
+		return limit
+	}
+	return width
+}
+
+func looksLikeUUID(value string) bool {
+	if len(value) != uuidCellWidth {
+		return false
+	}
+	for i, r := range value {
+		switch i {
+		case 8, 13, 18, 23:
+			if r != '-' {
+				return false
+			}
+		default:
+			if !isHexRune(r) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func isHexRune(r rune) bool {
+	return ('0' <= r && r <= '9') || ('a' <= r && r <= 'f') || ('A' <= r && r <= 'F')
 }
 
 var (

@@ -80,34 +80,7 @@ func (d *mysqlDB) FetchTableData(ctx context.Context, schema, table string, limi
 		return nil, err
 	}
 	defer rows.Close()
-
-	columns, err := rows.Columns()
-	if err != nil {
-		return nil, err
-	}
-
-	var resultRows [][]string
-	for rows.Next() {
-		values := make([]sql.NullString, len(columns))
-		ptrs := make([]any, len(columns))
-		for i := range values {
-			ptrs[i] = &values[i]
-		}
-		if err := rows.Scan(ptrs...); err != nil {
-			return nil, err
-		}
-		row := make([]string, len(columns))
-		for i, v := range values {
-			if v.Valid {
-				row[i] = v.String
-			} else {
-				row[i] = "NULL"
-			}
-		}
-		resultRows = append(resultRows, row)
-	}
-
-	return &QueryResult{Columns: columns, Rows: resultRows}, rows.Err()
+	return readMySQLRows(rows)
 }
 
 func (d *mysqlDB) ExecQuery(ctx context.Context, query string) (*QueryResult, error) {
@@ -117,14 +90,23 @@ func (d *mysqlDB) ExecQuery(ctx context.Context, query string) (*QueryResult, er
 	}
 	defer rows.Close()
 
+	return readMySQLRows(rows)
+}
+
+func readMySQLRows(rows *sql.Rows) (*QueryResult, error) {
 	columns, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+
+	columnTypes, err := rows.ColumnTypes()
 	if err != nil {
 		return nil, err
 	}
 
 	var resultRows [][]string
 	for rows.Next() {
-		values := make([]sql.NullString, len(columns))
+		values := make([]any, len(columns))
 		ptrs := make([]any, len(columns))
 		for i := range values {
 			ptrs[i] = &values[i]
@@ -133,12 +115,12 @@ func (d *mysqlDB) ExecQuery(ctx context.Context, query string) (*QueryResult, er
 			return nil, err
 		}
 		row := make([]string, len(columns))
-		for i, v := range values {
-			if v.Valid {
-				row[i] = v.String
-			} else {
-				row[i] = "NULL"
+		for i, value := range values {
+			typeName := ""
+			if i < len(columnTypes) && columnTypes[i] != nil {
+				typeName = columnTypes[i].DatabaseTypeName()
 			}
+			row[i] = formatMySQLValue(value, typeName)
 		}
 		resultRows = append(resultRows, row)
 	}
